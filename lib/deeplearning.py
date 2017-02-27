@@ -23,15 +23,6 @@ class InitializationError(object):
 ## Deep Belief Net #####################################################################################
 ########################################################################################################
 class deepbeliefnet(object):
-    
-    def __getstate__(self):
-        weights = [p.get_value() for p in self.params]
-        return weights
-
-    def __setstate__(self, weights):
-        i = iter(weights)
-        for p in self.params:
-            p.set_value(next(i))
             
     def __init__(self, architecture = [2000, 500, 500, 128], 
                  opt_epochs = [], predefined_weights = None, n_outs = 1):
@@ -39,14 +30,14 @@ class deepbeliefnet(object):
         # ensure proper class initialization
         assert len(architecture) > 1 , "architecture definition must include both the hidden layers AND input layer"
         
-        
         # numpy random generator
         numpy_rng = np.random.RandomState(123)
         
         # reconstruct the DBN class
         self.hidden_layers_sizes = architecture[1:]
         self.n_layers = len(self.hidden_layers_sizes)
-        self.params = []
+        self.params = []        #params for the MLP
+        self.params_rbm = []    #params for the RBMs
         self.n_ins = architecture[0]
         self.n_outs = n_outs
         print('... building the model')
@@ -55,7 +46,7 @@ class deepbeliefnet(object):
                         n_outs=self.n_outs,
                         hidden_layers_sizes=self.hidden_layers_sizes )
         
-        # loading pre_trained weights
+        # loading pre-trained weights
         if predefined_weights is not None and len(opt_epochs) >0 :
             self.new_model = False
             
@@ -66,21 +57,33 @@ class deepbeliefnet(object):
                 self.dbn.rbm_layers[i].__setstate__(pickle.load(open(model_pkl, 'rb')))
             # extract the model parameters
             for i in range(self.n_layers):
-                self.params.extend(self.dbn.rbm_layers[i].params)
+                self.params_rbm.extend(self.dbn.rbm_layers[i].params)
             
-            print('Previously defined model from "' + predefined_weights + '" loaded.')
+            print('Pre-trained DBN model from "' + predefined_weights + '" loaded.')
+        
+        # loading fine-tuned weights
+        elif predefined_weights is not None and len(opt_epochs) == 0:
             
-        elif (predefined_weights is None and len(opt_epochs) > 0) or \
-             (predefined_weights is not None and len(opt_epochs) == 0):
+            self.dbn.params = pickle.load(open(predefined_weights, 'rb'))
+            for i in range(self.n_layers):
+                self.dbn.sigmoid_layers[i].__setstate__ (self.dbn.params[(i*2):(i*2+2)])
+            self.dbn.logLayer.__setstate__ (self.dbn.params[(self.n_layers*2):(self.n_layers*2+2)])
+            
+            print('Fine-tuned (or MLP) model from "' + predefined_weights + '" loaded.')
+        
+        # error in class initialization
+        elif (predefined_weights is None and len(opt_epochs) > 0):
             
             raise InitializationError("Either 'opt_epochs' and predefined_weights' is empty or filled at the same time")
             
-        # no weights trained
+        # creating a new generative model
         else:
             self.new_model = True
             for i in range(self.n_layers):
-                self.params.extend(self.dbn.rbm_layers[i].params)
-            
+                self.params_rbm.extend(self.dbn.rbm_layers[i].params)
+    
+        
+                        
     def pretrain(self, input, pretraining_epochs=100, pretrain_lr=None, 
                         k=1, batch_size=800, output_path = 'params/dbn_params_test'):    
         
@@ -153,11 +156,7 @@ class deepbeliefnet(object):
             end_time = timeit.default_timer()
             print('The pretraining for layer ' + str(i) +
                   ' ran for %.2fm' % ((end_time - start_time) / 60.), file=sys.stderr)
-                
-        # update model parameters
-        self.params = []
-        for i in range(self.n_layers):
-            self.params.extend(self.dbn.rbm_layers[i].params)
+        
             
     def train(self, x, y, split_prop = [0.65,0.15,0.20], training_epochs = 100,
                     batch_size=800, learning_rate=None, drop_out = None,
@@ -247,15 +246,17 @@ class deepbeliefnet(object):
                         #----------- Saving the current best model -----------------------------------#
                         #-----------------------------------------------------------------------------#
                         print('Saving model...')
-                        # model parameters only updated in the dbn layers but in this wrapper function
-                        # ??? the above statement may need verification ???
-                        self.params = []
+                        
+                        tmp_params = []
                         for i in range(self.n_layers):
-                            self.params.extend(self.dbn.rbm_layers[i].params)
-
-                        #path_epoch_pickle = os.path.join( os.getcwd(), epoch_pickle)
-                        pickle.dump( self.__getstate__(), \
+                            tmp_params.extend( self.dbn.sigmoid_layers[i].__getstate__ () )
+                        tmp_params.extend( self.dbn.logLayer.__getstate__ () )
+                        
+                        pickle.dump( tmp_params, \
                                      open(output_path +'/trained_dbn.pkl', 'wb')    )
+                        
+                        del tmp_params
+                        
                         print('...model saved.')
                         #-----------------------------------------------------------------------------#
 
@@ -302,8 +303,44 @@ class deepbeliefnet(object):
         )
 
         return np.concatenate( [score(ii) for ii in range(N_splits)], axis=0 )
-        
 
+    '''
+    def predict(self, input, batch_size = 2000, prob = False):
+        
+        
+        train_set_x = input
+        N_input_x = train_set_x.shape[0]
+        
+        # compute number of minibatches for scoring
+        if train_set_x.get_value(borrow=True).shape[0] % batch_size != 0:
+            N_splits = int( np.floor(train_set_x.get_value(borrow=True).shape[0] / batch_size) + 1 )
+        else:
+            N_splits = int( np.floor(train_set_x.get_value(borrow=True).shape[0] / batch_size) )
+
+        # allocate symbolic variables for the data
+        index = T.lscalar()    # index to a [mini]batch
+        
+        if prob:
+            output = self.dbn.pred_prob
+        else:
+            output = self.dbn.pred_class
+        
+        output = theano.function(
+             inputs = [index],
+             outputs = output,
+             givens={
+                self.dbn.x: train_set_x[index * batch_size: (index + 1) * batch_size]
+             }
+        )    
+            
+        return np.concatenate( [output(ii) for ii in range(N_splits)], axis=0 )
+    '''
+    def predict(self, input, batch_size = 2000, prob = False):
+        
+        return self.dbn.predict(input = input, batch_size = batch_size, prob = prob)
+        
+        
+        
 ########################################################################################################
 ## Auto-Encoder ########################################################################################
 ########################################################################################################

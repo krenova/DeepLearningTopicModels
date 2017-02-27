@@ -285,7 +285,8 @@ class DBN(object):
             )
             
         return train_dae
-        
+    
+    
 
     def apply_dropout(self, input, corruption_level):
         return self.theano_rng.binomial(size=input.shape, n=1,
@@ -329,7 +330,6 @@ class DBN(object):
         (valid_set_x, valid_set_y) = (x[idx_valid,], y[idx_valid])
         (test_set_x, test_set_y)   = (x[idx_test,],  y[idx_test])
         
-
         # compute number of minibatches for training, validation and testing
         n_train_batches = train_set_x.shape[0].eval()
         n_train_batches //= batch_size
@@ -340,14 +340,13 @@ class DBN(object):
 
         index = T.lscalar('index')  # index to a [mini]batch
 
-        #******************************************
         if drop_out:
             
             assert type(drop_out) == list, "'drop_out' variable must be none or or a list of proportions"
             assert len(drop_out) == (self.n_layers+1), "len of 'drop_out' list must equal number of layers"
             
             x_dropout = T.matrix('x_dropout')
-            fwd_pass = x_dropout
+            fwd_pass = self.x
             
             for i in range(self.n_layers):
                 self.sigmoid_layers[i].input = self.apply_dropout(fwd_pass, drop_out[i])
@@ -370,9 +369,6 @@ class DBN(object):
                 updates=updates,
                 givens={
                     self.x: train_set_x[
-                        index * batch_size: (index + 1) * batch_size
-                    ],
-                    x_dropout: train_set_x[
                         index * batch_size: (index + 1) * batch_size
                     ],
                     self.y: train_set_y[
@@ -403,9 +399,7 @@ class DBN(object):
                         index * batch_size: (index + 1) * batch_size
                     ]
                 }
-            )
-        #******************************************
-        
+            )        
         
         test_score_i = theano.function(
             [index],
@@ -443,4 +437,38 @@ class DBN(object):
 
         return n_train_batches, train_fn, valid_score, test_score
 
+    
+    
+    def predict(self, input, batch_size = 2000, prob = False):
+        
+        
+        train_set_x = input
+        N_input_x = train_set_x.shape[0]
+        
+        # compute number of minibatches for scoring
+        if train_set_x.get_value(borrow=True).shape[0] % batch_size != 0:
+            N_splits = int( numpy.floor(train_set_x.get_value(borrow=True).shape[0] / batch_size) + 1 )
+        else:
+            N_splits = int( numpy.floor(train_set_x.get_value(borrow=True).shape[0] / batch_size) )
 
+        # allocate symbolic variables for the data
+        index = T.lscalar()    # index to a [mini]batch
+        
+        if prob:
+            output = theano.function(
+                 inputs = [index],
+                 outputs = self.logLayer.p_y_given_x,
+                 givens={
+                    self.x: train_set_x[index * batch_size: (index + 1) * batch_size]
+                 }
+            )  
+        else:
+            output = theano.function(
+                 inputs = [index],
+                 outputs = self.logLayer.y_pred,
+                 givens={
+                    self.x: train_set_x[index * batch_size: (index + 1) * batch_size]
+                 }
+            )  
+            
+        return numpy.concatenate( [output(ii) for ii in range(N_splits)], axis=0 )

@@ -35,6 +35,16 @@ import theano.tensor as T
 
 # start-snippet-1
 class HiddenLayer(object):
+    
+    def __getstate__(self):
+        weights = [p.get_value() for p in self.params]
+        return weights
+
+    def __setstate__(self, weights):
+        i = iter(weights)
+        for p in self.params:
+            p.set_value(next(i))
+        
     def __init__(self, rng, input, n_in, n_out, W=None, b=None,
                  activation=T.tanh):
         """
@@ -150,7 +160,16 @@ class LogisticRegression(object):
     points onto a set of hyperplanes, the distance to which is used to
     determine a class membership probability.
     """
+    
+    def __getstate__(self):
+        weights = [p.get_value() for p in self.params]
+        return weights
 
+    def __setstate__(self, weights):
+        i = iter(weights)
+        for p in self.params:
+            p.set_value(next(i))
+        
     def __init__(self, input, n_in, n_out):
         """ Initialize the parameters of the logistic regression
 
