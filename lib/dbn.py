@@ -246,9 +246,7 @@ class DBN(object):
             L = - T.sum(x_normalized * T.log(fwd_pass), axis=1)
         else:
             # ------ Objective Function: square error ------ #
-            # rightfully, should follow by L = L / len(vocab), but linear scaling
-            # does not affect search for minima and therefore omitted
-            L = T.sum( T.pow( fwd_pass*self.dbn.rbm_layers[0].input_rSum[:,None] - self.x, 2), axis=1)
+            L = T.sum( T.pow( fwd_pass - (self.x/self.dbn.rbm_layers[0].input_rSum[:,None]), 2), axis=1)
             
         # mean cost
         cost = T.mean(L)
@@ -440,7 +438,6 @@ class DBN(object):
     
     
     def predict(self, input, batch_size = 2000, prob = False):
-        
         
         train_set_x = input
         N_input_x = train_set_x.shape[0]

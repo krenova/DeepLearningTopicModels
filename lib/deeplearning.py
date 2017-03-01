@@ -304,37 +304,6 @@ class deepbeliefnet(object):
 
         return np.concatenate( [score(ii) for ii in range(N_splits)], axis=0 )
 
-    '''
-    def predict(self, input, batch_size = 2000, prob = False):
-        
-        
-        train_set_x = input
-        N_input_x = train_set_x.shape[0]
-        
-        # compute number of minibatches for scoring
-        if train_set_x.get_value(borrow=True).shape[0] % batch_size != 0:
-            N_splits = int( np.floor(train_set_x.get_value(borrow=True).shape[0] / batch_size) + 1 )
-        else:
-            N_splits = int( np.floor(train_set_x.get_value(borrow=True).shape[0] / batch_size) )
-
-        # allocate symbolic variables for the data
-        index = T.lscalar()    # index to a [mini]batch
-        
-        if prob:
-            output = self.dbn.pred_prob
-        else:
-            output = self.dbn.pred_class
-        
-        output = theano.function(
-             inputs = [index],
-             outputs = output,
-             givens={
-                self.dbn.x: train_set_x[index * batch_size: (index + 1) * batch_size]
-             }
-        )    
-            
-        return np.concatenate( [output(ii) for ii in range(N_splits)], axis=0 )
-    '''
     def predict(self, input, batch_size = 2000, prob = False):
         
         return self.dbn.predict(input = input, batch_size = batch_size, prob = prob)
@@ -345,24 +314,6 @@ class deepbeliefnet(object):
 ## Auto-Encoder ########################################################################################
 ########################################################################################################
 class autoencoder(object):
-    
-    def __getstate__(self):
-        weights = [p.get_value() for p in self.params]
-        return weights
-
-    def __setstate__(self, weights):
-        self.params = []
-        print(len(weights))
-        for p in weights:
-            self.params.extend(p)
-        for i in range(self.n_layers):
-                self.dbn.rbm_layers[i].W = self.params[i*3]
-                self.dbn.rbm_layers[i].hbias = self.params[i*3 + 1]
-                self.dbn.rbm_layers[i].vbias = self.params[i*3 + 2]
-        for i in range(self.n_layers):
-                self.dbn.rbm_layers[i].W = theano.shared(self.dbn.rbm_layers[i].W)
-                self.dbn.rbm_layers[i].hbias = theano.shared(self.dbn.rbm_layers[i].hbias)
-                self.dbn.rbm_layers[i].vbias = theano.shared(self.dbn.rbm_layers[i].vbias)
         
     def __init__(self, architecture = [], opt_epochs = [], model_src = 'params/dbn_params', param_type = 'dbn'):
         
@@ -379,22 +330,18 @@ class autoencoder(object):
                         hidden_layers_sizes = self.hidden_layers_sizes )
         self.theano_rng = T.shared_randomstreams.RandomStreams(1234)
         
-        
-        # input_rSum must be initialized for the RSM layer
-        #self.x = T.matrix('x')
-        #self.dbn.rbm_layers[0].input_rSum = self.x.sum(axis=1)
-        
-        
         if param_type == 'dbn':
             # load saved model
+            print('Loading the pre-trained Deep Belief Net parameters...')
             for i in range(self.n_layers):
                 model_pkl = os.path.join(model_src,
                             'dbn_layer' + str(i) + '_epoch_' + str(opt_epochs[i]) + '.pkl')
                 self.dbn.rbm_layers[i].__setstate__(pickle.load(open(model_pkl, 'rb')))
                 # extract the model parameters
                 self.params.extend(self.dbn.rbm_layers[i].params)
+            print('...model loaded.')
 
-
+        
         else:
             print('Loading the trained auto-encoder parameters.')
             print('...please ensure that the auto-encoder params matches the defined architecture.')
@@ -528,118 +475,6 @@ class autoencoder(object):
 
         print(('Training ran for %.2fm' % (training_time / 60.)), file=sys.stderr)
     
-    def train2(self, input, epochs, batch_size = 2000, learning_rate = None, add_noise = None,
-                    obj_fn = 'cross_entropy', output_path = 'params/ae_params'): 
-        
-        if learning_rate is None:
-            learning_rate = 1/batch_size
-        if not os.path.isdir(output_path):
-            os.makedirs(output_path)
-            
-        train_set_x = input
-        N_input_x = train_set_x.shape[0]
-        
-        # compute number of minibatches for training
-        if train_set_x.get_value(borrow=True).shape[0] % batch_size != 0:
-            N_splits = int( np.floor(train_set_x.get_value(borrow=True).shape[0] / batch_size) + 1 )
-        else:
-            N_splits = int( np.floor(train_set_x.get_value(borrow=True).shape[0] / batch_size) )
-        
-        # allocate symbolic variables for the data
-        index = T.lscalar()                        # index to a [mini]batch
-        
-        
-        # if add_noise is True, function adds gaussian noise to the 
-        # input of the decoding layer
-        if add_noise:
-            self.noise = T.matrix('noise')
-            cost, updates = self.get_cost_updates(
-                                learning_rate=learning_rate,
-                                add_noise = True,
-                                obj_fn = obj_fn
-            )
-            train_noise = self.theano_rng.normal(
-                                size=(N_input_x.eval(), self.hidden_layers_sizes[-1]),
-                                avg=0, 
-                                std=add_noise, 
-                                ndim=None
-            )
-            train_da = theano.function(
-                [index],
-                cost,
-                updates=updates,
-                givens={
-                        self.x: train_set_x[index * batch_size: (index + 1) * batch_size],
-                    self.noise: train_noise[index * batch_size: (index + 1) * batch_size]
-                }
-            )
-        else:
-            cost, updates = self.get_cost_updates(
-                                learning_rate=learning_rate,
-                                obj_fn = obj_fn
-            )
-            train_da = theano.function(
-                [index],
-                cost,
-                updates=updates,
-                givens={
-                    self.x: train_set_x[index * batch_size: (index + 1) * batch_size]
-                }
-            )
-        
-        start_time = timeit.default_timer()
-        
-        ############
-        # TRAINING #
-        ############
-
-        # go through training epochs
-        cost_profile = []
-        for epoch in range(epochs):
-            
-            # go through trainng set
-            c = []
-            for batch_index in range(N_splits):
-                c.append(train_da(batch_index))
-            
-            # saving and printing iterations
-            cost_profile += [np.mean(c, dtype='float64')]
-            if epoch % 100 == 0:
-                #-----------------------------------------------------------------------------#
-                #----------- Saving the current best model -----------------------------------#
-                #-----------------------------------------------------------------------------#
-                print('Saving model...')
-                # model parameters only updated in the dbn layers but in this wrapper function
-                # ??? the above statement may need verification ???
-                self.params = []
-                for i in range(self.n_layers):
-                    self.params.extend(self.dbn.rbm_layers[i].params)
-                # save the model parameters for all layers
-                pickle.dump( self.__getstate__(), \
-                             open(output_path +'/ae_params.pkl', 'wb')    )
-                print('...model saved')
-                # save the proxy likelihood profile
-                pd.DataFrame(data = {'cross_entropy' : cost_profile} ). \
-                   to_csv( output_path +'/cost_profile.csv', index = False)
-                print('Training epoch %d, cost ' % epoch, cost_profile[epoch])
-                #-----------------------------------------------------------------------------#
-        
-        print('Saving model...')
-        # save the model parameters for each layer
-        pickle.dump( self.__getstate__(), \
-                     open(output_path +'/ae_params.pkl', 'wb')    )
-        print('...model saved')
-        # save the proxy likelihood profile
-        pd.DataFrame(data = {'cross_entropy' : cost_profile} ). \
-           to_csv( output_path +'/cost_profile.csv', index = False)
-        print('Training epoch %d, cost ' % epoch, cost_profile[epoch])
-        
-        end_time = timeit.default_timer()
-
-        training_time = (end_time - start_time)
-
-        print(('Training ran for %.2fm' % (training_time / 60.)), file=sys.stderr)
-        
     def score(self, input, batch_size = 2000):    
         train_set_x = input
         N_input_x = train_set_x.shape[0]
