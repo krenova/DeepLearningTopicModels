@@ -4,6 +4,7 @@ This repo is a collection of neural network tools, built on top of the [Theano](
 The overview of the model construction comprises of 3 phases.
 
 ![addfdfdf](http://i.imgur.com/pVs5Rvb.png)_Image taken from [[1](http://www.utstat.toronto.edu/~rsalakhu/papers/topics.pdf)]_
+
 1. The first is to design the Network architecture using a RSM to model the input data followed by stacking as many layers of RBMs as deemed reasonable to model the outputs of the RSM. The stacking of RBMs (and RSM) leads what is called a Deep Generative Model or a more specifically in this case, a [Deep Belief Network](http://deeplearning.net/tutorial/DBN.html) (DBN). Like single layered RSMs or RBMs, this multi-layered network is bidirectional. It is able to generate encoded outputs from input data and more distinctly, generate 'input' data using encoded data. However, unlike single layered networks, multilayered networks are more likely to be able to generate input data with more similarity to the training data due to their ability to capture structure high-dimensions.
 
 
