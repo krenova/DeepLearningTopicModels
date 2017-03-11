@@ -14,7 +14,7 @@ from lib.rbm import RSM
 from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 
 
-os.chdir('/home/ekhongl/Codes/DL - Topic Modelling')
+os.chdir('~/Codes/DL - Topic Modelling')
 
 
 def test_rbm(input, learning_rate=1/1600, 

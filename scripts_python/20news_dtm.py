@@ -9,7 +9,7 @@ from sklearn.feature_extraction.text import CountVectorizer
 
 
 
-os.chdir('/home/ekhongl/Codes/DL - Topic Modelling')
+os.chdir('~/Codes/DL - Topic Modelling')
 
 dat = pd.read_csv('data/clean_20news.csv', sep=",")
 

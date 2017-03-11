@@ -18,7 +18,7 @@ import theano.tensor as T
 
 from lib.deeplearning import autoencoder
 
-os.chdir('/home/ekhongl/Codes/DL - Topic Modelling')
+os.chdir('~/Codes/DL - Topic Modelling')
 
 dat_x = np.genfromtxt('data/dtm_2000_20news.csv', dtype='float32', delimiter=',', skip_header = 1)
 dat_y = dat_x[:,0]
